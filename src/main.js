@@ -2,7 +2,7 @@ import filesSystem from 'fs'
 import { from } from 'rxjs'
 import axios from "axios"
 import uuidv4 from "uuid/v4"
-import { filter, map, concatMap, mergeAll, toArray, take, bufferCount} from 'rxjs/operators'
+import { filter, map, concatMap, mergeAll, toArray, take, bufferCount, tap} from 'rxjs/operators'
 
 import GENERAL_CONFIG from "../generalConfig"
 
@@ -51,7 +51,7 @@ async function download_image (url, image_path)
 function createActivityFolder(activityResult)
 {
 	//Transform name with _ character
-	const nameDir = `./outputData/${activityResult.activityName.replace(" ", "_")}`;
+	const nameDir = `./outputData/${activityResult.name.replace(" ", "_")}`;
 
 	if (!filesSystem.existsSync(nameDir))
 	{
@@ -68,10 +68,40 @@ function writeJSONFile(data, replacer, path)
 	filesSystem.writeFileSync(path, JSON.stringify(data, replacer, 4), "utf8");
 }
 
+function timeConversion(ms)
+{
+	let seconds = (ms / 1000).toFixed(1);
+	let minutes = (ms / (1000 * 60)).toFixed(1);
+	let hours = (ms / (1000 * 60 * 60)).toFixed(1);
+	let days = (ms / (1000 * 60 * 60 * 24)).toFixed(1);
+
+	if (seconds < 60) {
+		return seconds + " Sec";
+	} else if (minutes < 60) {
+		return minutes + " Min";
+	} else if (hours < 24) {
+		return hours + " Hrs";
+	} else {
+		return days + " Days"
+	}
+}
+
+function showProgress(currentNumberOfResults, totalNumberOfResults, beginTime)
+{
+	const timeElapsed = timeConversion(new Date() - beginTime);
+	console.log(`Progress ${currentNumberOfResults}/${totalNumberOfResults} (${100.0 * currentNumberOfResults/totalNumberOfResults} %) (${timeElapsed} elapsed)`);
+}
+
 async function run ()
 {
 	let filePath = `./data/${filesSystem.readdirSync('./data', { encoding: 'utf8' })}`;
 	let arrayOfActivityResults = JSON.parse(filesSystem.readFileSync(filePath));
+
+	//Progress variables
+	let totalNumberOfResults = arrayOfActivityResults.map(activity => activity.realNumberResults).reduce((tot, curr) => tot + curr, 0);
+	let currentNumberOfResults = 0;
+	let initTime = new Date();
+	showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 
 	from(arrayOfActivityResults)
 	.pipe(map(createActivityFolder))
@@ -90,6 +120,11 @@ async function run ()
 				return from(download_image(url, pathToImage).catch(err => err));
 			}))
 		))
+		.pipe(tap(() =>
+		{
+			currentNumberOfResults++;
+			showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
+		}))
 	))
 	.pipe(mergeAll())
 	.pipe(filter(res => res !== "success"))
