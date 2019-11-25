@@ -2,7 +2,7 @@ import filesSystem from 'fs'
 import { from } from 'rxjs'
 import axios from "axios"
 import uuidv4 from "uuid/v4"
-import { filter, map, concatMap, mergeAll, toArray, take, bufferCount, tap} from 'rxjs/operators'
+import { filter, map, concatMap, mergeAll, mergeMap, toArray, take, bufferCount, tap} from 'rxjs/operators'
 
 import GENERAL_CONFIG from "../generalConfig"
 
@@ -19,21 +19,21 @@ async function download_image (url, image_path)
 		if(isContentTypeImageBool)
 		{
 			const writer = filesSystem.createWriteStream(image_path);
-			response.data.pipe(writer);
 
 			return new Promise((resolve, reject) =>
 			{
-				writer.on('finish', () =>
-				{
-					writer.close();
-					resolve("success");
-				});
-
-				writer.on('error', () =>
-				{
-					writer.close();
-					reject(`Error during writing image steam with url ${url}`);
-				});
+				response.data
+					.pipe(writer)
+					.on('finish', () =>
+					{
+						writer.close();
+						resolve("success");
+					})
+					.on('error', () =>
+					{
+						writer.close();
+						reject(`Error during writing image stream with url ${url}`);
+					});
 			});
 
 		}
@@ -103,32 +103,36 @@ async function run ()
 	let initTime = new Date();
 	showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 
-	from(arrayOfActivityResults)
-	.pipe(map(createActivityFolder))
+	from(arrayOfActivityResults)//Stream activity results
+	.pipe(map(createActivityFolder))//Stream activity results
 	.pipe(concatMap(activity =>
-		from(activity.results)
-		.pipe(map(x => x.urlImage))
-		.pipe(filter(x => isPicture.test(x)))
-		.pipe(take(GENERAL_CONFIG.wantedNumberOfImagesPerActivity))
-		.pipe(bufferCount(GENERAL_CONFIG.batchSizeImageDownloading))
+		from(activity.results)//Stream results
+		.pipe(map(x => x.urlImage))//Stream urls
+		.pipe(filter(x => isPicture.test(x)))//Stream urls
+		.pipe(take(GENERAL_CONFIG.wantedNumberOfImagesPerActivity))//Stream urls
+		.pipe(bufferCount(GENERAL_CONFIG.batchSizeImageDownloading))//Stream de arrays de urls
 		.pipe(concatMap(someUrls =>
-			from(someUrls)
-			.pipe(map(url =>
+			from(someUrls)//Stream urls
+			.pipe(mergeMap(url =>
 			{
 				let arraySplit = url.split("?").shift().split(".");
 				let pathToImage = `${activity.nameDir}/${uuidv4()}.${arraySplit[arraySplit.length - 1]}`;
 				return from(download_image(url, pathToImage).catch(err => err));
+			}))//Stream de string ("success" ou)
+			.pipe(tap(() =>
+			{
+				currentNumberOfResults++;
+				showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 			}))
-		))
+		))//Stream de string ("success" ou)
 		.pipe(tap(() =>
 		{
 			currentNumberOfResults++;
 			showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
-		}))
-	))
-	.pipe(mergeAll())
-	.pipe(filter(res => res !== "success"))
-	.pipe(toArray())
+		}))//Stream de string ("success" ou)
+	))//Stream de string ("success" ou)
+	.pipe(filter(res => res !== "success"))//Stream de  string ("success" ou)
+	.pipe(toArray())//Stream de array de string ("success" ou)
 	.pipe(map(errors =>
 	{
 		console.error("Errors: ", errors);
