@@ -1,4 +1,4 @@
 {
-  "wantedNumberOfImagesPerActivity": 100,
+  "wantedNumberOfImagesPerActivity": 500,
   "batchSizeImageDownloading": 10
 }

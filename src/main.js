@@ -3,6 +3,7 @@ import { from } from 'rxjs'
 import axios from "axios"
 import uuidv4 from "uuid/v4"
 import { filter, map, concatMap, mergeAll, mergeMap, toArray, take, bufferCount, tap} from 'rxjs/operators'
+import * as base64url from 'base64-url'
 
 import GENERAL_CONFIG from "../generalConfig"
 
@@ -116,7 +117,8 @@ async function run ()
 			.pipe(mergeMap(url =>
 			{
 				let arraySplit = url.split("?").shift().split(".");
-				let pathToImage = `${activity.nameDir}/${uuidv4()}.${arraySplit[arraySplit.length - 1]}`;
+				let imageName = base64url.encode(url);
+				let pathToImage = `${activity.nameDir}/${imageName}.${arraySplit[arraySplit.length - 1]}`;
 				return from(download_image(url, pathToImage).catch(err => err));
 			}))//Stream de string ("success" ou)
 			.pipe(tap(() =>
@@ -125,11 +127,6 @@ async function run ()
 				showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 			}))
 		))//Stream de string ("success" ou)
-		.pipe(tap(() =>
-		{
-			currentNumberOfResults++;
-			showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
-		}))//Stream de string ("success" ou)
 	))//Stream de string ("success" ou)
 	.pipe(filter(res => res !== "success"))//Stream de  string ("success" ou)
 	.pipe(toArray())//Stream de array de string ("success" ou)
