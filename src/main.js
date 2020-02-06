@@ -4,22 +4,25 @@ import axios from "axios"
 import uuidv4 from "uuid/v4"
 import { filter, map, concatMap, mergeAll, mergeMap, toArray, take, bufferCount, tap} from 'rxjs/operators'
 import * as base64url from 'base64-url'
+import * as mime from "mime-types"
 
 import GENERAL_CONFIG from "../generalConfig"
 
 const isPicture = /^.*\.(jpg|png|gif|bmp|jpeg)/i;
 const isContentTypeImage = /image\/.*[^\s]/i;
 
-async function download_image (url, image_path)
+async function download_image (url, image_path_without_extension)
 {
 	try
 	{
 		const response = await axios({url, responseType: 'stream'});
 
-		let isContentTypeImageBool = isContentTypeImage.test(response.headers["content-type"]);
-		if(isContentTypeImageBool)
+		const contentType = response.headers["content-type"];
+		const extension = mime.extension(contentType);
+
+		if(isContentTypeImage.test(contentType))
 		{
-			const writer = filesSystem.createWriteStream(image_path);
+			const writer = filesSystem.createWriteStream(`${image_path_without_extension}.${extension}`);
 
 			return new Promise((resolve, reject) =>
 			{
@@ -30,8 +33,9 @@ async function download_image (url, image_path)
 						writer.close();
 						resolve("success");
 					})
-					.on('error', () =>
+					.on('error', (e) =>
 					{
+						console.log(`Error during writing image stream with url ${url}`, e);
 						writer.close();
 						reject(`Error during writing image stream with url ${url}`);
 					});
@@ -116,10 +120,7 @@ async function run ()
 			from(someUrls)//Stream urls
 			.pipe(mergeMap(url =>
 			{
-				let arraySplit = url.split("?").shift().split(".");
-				let imageName = base64url.encode(url);
-				let pathToImage = `${activity.nameDir}/${imageName}.${arraySplit[arraySplit.length - 1]}`;
-				return from(download_image(url, pathToImage).catch(err => err));
+				return from(download_image(url, `${activity.nameDir}/${base64url.encode(url)}`).catch(err => err));
 			}))//Stream de string ("success" ou)
 			.pipe(tap(() =>
 			{

@@ -80,3 +80,6 @@ node_modules
 
 # Results files
 /outputData/*
+/outputDataDuckDuck/*
+/outputDataGoogle/*
+/oldData/*
