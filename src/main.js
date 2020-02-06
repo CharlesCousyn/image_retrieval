@@ -1,5 +1,5 @@
 import filesSystem from 'fs'
-import { from } from 'rxjs'
+import { from, partition} from 'rxjs'
 import axios from "axios"
 import uuidv4 from "uuid/v4"
 import { filter, map, concatMap, mergeAll, mergeMap, toArray, take, bufferCount, tap} from 'rxjs/operators'
@@ -56,7 +56,7 @@ async function download_image (url, image_path_without_extension)
 function createActivityFolder(activityResult)
 {
 	//Transform name with _ character
-	const nameDir = `./outputData/${activityResult.name.replace(" ", "_")}`;
+	const nameDir = `./outputData/${activityResult.name.replace("/ /g", "_")}`;
 
 	if (!filesSystem.existsSync(nameDir))
 	{
@@ -108,38 +108,40 @@ async function run ()
 	let initTime = new Date();
 	showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 
-	from(arrayOfActivityResults)//Stream activity results
-	.pipe(map(createActivityFolder))//Stream activity results
-	.pipe(concatMap(activity =>
-		from(activity.results)//Stream results
-		.pipe(map(x => x.urlImage))//Stream urls
-		.pipe(filter(x => isPicture.test(x)))//Stream urls
-		.pipe(take(GENERAL_CONFIG.wantedNumberOfImagesPerActivity))//Stream urls
-		.pipe(bufferCount(GENERAL_CONFIG.batchSizeImageDownloading))//Stream de arrays de urls
-		.pipe(concatMap(someUrls =>
-			from(someUrls)//Stream urls
-			.pipe(mergeMap(url =>
-			{
-				return from(download_image(url, `${activity.nameDir}/${base64url.encode(url)}`).catch(err => err));
-			}))//Stream de string ("success" ou)
-			.pipe(tap(() =>
-			{
-				currentNumberOfResults++;
-				showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
-			}))
-		))//Stream de string ("success" ou)
-	))//Stream de string ("success" ou)
-	.pipe(filter(res => res !== "success"))//Stream de  string ("success" ou)
-	.pipe(toArray())//Stream de array de string ("success" ou)
-	.pipe(map(errors =>
-	{
-		console.error("Errors: ", errors);
-		writeJSONFile(errors, null, "./outputData/errors.json");
-	}))
-	.subscribe(() =>
-	{
-		console.log("Done");
-	});
+	const all = from(arrayOfActivityResults)//Stream activity results
+		.pipe(map(createActivityFolder))//Stream activity results
+		.pipe(concatMap(activity =>
+			from(activity.results)//Stream results
+				.pipe(map(x => x.urlImage))//Stream urls
+				.pipe(filter(x => isPicture.test(x)))//Stream urls
+				.pipe(take(GENERAL_CONFIG.wantedNumberOfImagesPerActivity))//Stream urls
+				.pipe(bufferCount(GENERAL_CONFIG.batchSizeImageDownloading))//Stream de arrays de urls
+				.pipe(concatMap(someUrls =>
+					from(someUrls)//Stream urls
+						.pipe(mergeMap(url =>
+						{
+							return from(download_image(url, `${activity.nameDir}/${base64url.encode(url)}`).catch(err => err));
+						}))//Stream de string ("success" ou)
+						.pipe(tap(() =>
+						{
+							currentNumberOfResults++;
+							showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
+						}))
+				))//Stream de string ("success" ou)
+		));//Stream de string ("success" ou);
+
+	const [errors, valids] = partition(all, res => res !== "success");
+
+	const errorStream = errors
+		.pipe(toArray())
+		.pipe(map(errors =>
+		{
+			console.error("Errors: ", errors);
+			writeJSONFile(errors, null, "./outputData/errors.json");
+		}))
+		.toPromise();
+
+	await Promise.all([errorStream, valids.toPromise()]);
 }
 
 run().then();
