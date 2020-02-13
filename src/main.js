@@ -11,11 +11,14 @@ import GENERAL_CONFIG from "../generalConfig"
 const isPicture = /^.*\.(jpg|png|gif|bmp|jpeg)/i;
 const isContentTypeImage = /image\/.*[^\s]/i;
 
+const httpClient = axios.create();
+httpClient.defaults.timeout = 60 * 1000;
+
 async function download_image (url, image_path_without_extension)
 {
 	try
 	{
-		const response = await axios({url, responseType: 'stream'});
+		const response = await httpClient({url, responseType: 'stream', timeout: 60 * 1000});
 
 		const contentType = response.headers["content-type"];
 		const extension = mime.extension(contentType);
@@ -56,7 +59,10 @@ async function download_image (url, image_path_without_extension)
 function createActivityFolder(activityResult)
 {
 	//Transform name with _ character
-	const nameDir = `./outputData/${activityResult.name.replace("/ /g", "_")}`;
+	let find = ' ';
+	let re = new RegExp(find, 'g');
+
+	const nameDir = `./outputData/${activityResult.name.replace(re, "_")}`;
 
 	if (!filesSystem.existsSync(nameDir))
 	{
@@ -64,6 +70,7 @@ function createActivityFolder(activityResult)
 	}
 
 	activityResult["nameDir"] = nameDir;
+	activityResult["nameImageBeginning"] = activityResult.name.replace(re, "_");
 
 	return activityResult;
 }
@@ -108,29 +115,32 @@ async function run ()
 	let initTime = new Date();
 	showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 
-	const all = from(arrayOfActivityResults)//Stream activity results
+	const all = await from(arrayOfActivityResults)//Stream activity results
 		.pipe(map(createActivityFolder))//Stream activity results
 		.pipe(concatMap(activity =>
 			from(activity.results)//Stream results
-				.pipe(map(x => x.urlImage))//Stream urls
-				.pipe(filter(x => isPicture.test(x)))//Stream urls
+				.pipe(map((x, index) => [x.urlImage, index]))//Stream urls
+				.pipe(filter(([urlImage, index]) => isPicture.test(urlImage)))//Stream urls
 				.pipe(take(GENERAL_CONFIG.wantedNumberOfImagesPerActivity))//Stream urls
 				.pipe(bufferCount(GENERAL_CONFIG.batchSizeImageDownloading))//Stream de arrays de urls
-				.pipe(concatMap(someUrls =>
-					from(someUrls)//Stream urls
-						.pipe(mergeMap(url =>
+				.pipe(concatMap(someUrlsAndIndex =>
+				{
+					return from(someUrlsAndIndex)//Stream urls
+						.pipe(mergeMap(([urlImage, index]) =>
 						{
-							return from(download_image(url, `${activity.nameDir}/${base64url.encode(url)}`).catch(err => err));
+							return from(download_image(urlImage, `${activity.nameDir}/${activity.nameImageBeginning}_${index}`).catch(err => err));
 						}))//Stream de string ("success" ou)
 						.pipe(tap(() =>
 						{
 							currentNumberOfResults++;
 							showProgress(currentNumberOfResults, totalNumberOfResults, initTime);
 						}))
+				}
 				))//Stream de string ("success" ou)
-		));//Stream de string ("success" ou);
+		))
+		.toPromise();//Stream de string ("success" ou);
 
-	const [errors, valids] = partition(all, res => res !== "success");
+	const [errors, valids] = partition(from(all), res => res !== "success");
 
 	const errorStream = errors
 		.pipe(toArray())
@@ -138,10 +148,12 @@ async function run ()
 		{
 			console.error("Errors: ", errors);
 			writeJSONFile(errors, null, "./outputData/errors.json");
-		}))
-		.toPromise();
+		}));
 
-	await Promise.all([errorStream, valids.toPromise()]);
+	await Promise.all([errorStream.toPromise(), valids.toPromise()]);
 }
 
-run().then();
+(async () =>
+{
+	await run();
+})();
