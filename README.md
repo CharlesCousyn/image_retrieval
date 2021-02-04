@@ -8,7 +8,7 @@
 Just run ```npm install```
 
 **How to run the project?** <br/>
-Just run ```npm start```
+Just run ```npm start```  (by default, running this command delete the content of the ``outputData`` folder)
 
 **Where do i have to put the file from  [search activity project](https://github.com/CharlesCousyn/search_activities))?** <br/>
 In the ``data`` folder
@@ -25,4 +25,7 @@ In the root folder, in the file ```generalConfig.json```
 **Where can I find the results?** <br/>
 In the folder ``outputData``. More precisely, in the folders named using activity labels
 The images are named using the format ``[activityName]_[id].[extension]``
+
+**How do i delete all downloaded images?** <br/>
+Just run ``node -r esm src/reset.js``
 
